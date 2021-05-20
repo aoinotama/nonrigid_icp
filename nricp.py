@@ -11,9 +11,14 @@ def choleskySolve(M, b):
     return factor(M.T.dot(b)).toarray()
 
 
+folder = "ExpSimple\Ref2"
+
+Debug=False
+DebugByStep=True
+DebugShowStep=True
+DebugExportStep=True
 
 
-Debug=True
 normalWeighting=False
 gamma = 1
 alphas = np.linspace(200,1,20)
@@ -63,7 +68,7 @@ def nonrigidIcp(sourcemesh,targetmesh):
 
 
     # X for transformations and D for vertex info in sparse matrix
-    # using lil_matrix becaiuse chinging sparsity in csr is expensive 
+    # using lil_matrix because chinging sparsity in csr is expensive 
     #Equation -> 8
     D = sparse.lil_matrix((n_source_verts,n_source_verts*4), dtype=np.float32)
     j_=0
@@ -117,7 +122,7 @@ def nonrigidIcp(sourcemesh,targetmesh):
             matches = target_vertices[indices]
             
             #rigtnow setting threshold manualy, but if we have and landmark info we could set here
-            mismatches = np.where(distances>0.02)[0]
+            mismatches = np.where(distances>15)[0]
             
             
             if normalWeighting:
@@ -148,6 +153,87 @@ def nonrigidIcp(sourcemesh,targetmesh):
             
             X = choleskySolve(A, B)
         
+            try:
+                ErrorStiffness = alpha_stiffness * kron_M_G * X
+                ErrorFace = kron_M_G * X
+                try:
+                    # print(ErrorStiffness.shape)
+                    pass
+                except:
+                    print("Can not print ErrorStiffness's shape")
+                try:
+                    pass
+                    # print(len(ErrorStiffness))
+                except:
+                    print("Can not print length of ErrorStiffness")
+                try: 
+                    pass
+                    # print(type(ErrorStiffness))
+                except:
+                    print("Can not Get the type of ErrorStiffness")
+                try:
+                    temp = ErrorStiffness - B[0:4 * n_source_edges, :]
+                    try:
+                        ErrorS = np.linalg.norm(temp)
+                        ErrorFace = np.linalg.norm(ErrorFace - B[0:4 * n_source_edges, :])
+                        # print("Stiffness Error is  ", end=" ")
+                        # print(ErrorS)
+                        print("Face Error is", end=" ")
+                        print(ErrorFace)
+                    except Exception as er1:
+                        print("Can not print Error")
+                        print(er1);
+                except Exception as er2:
+                    print("Can not Calculate Erorr")
+                    print(er2) 
+            except:
+                print("Can not calculate ErrorStiffness")
+            
+            try:
+                ErrorVerticesMatrix = D.multiply(wVec)*X - U
+                try:
+                    ErrorVertices = np.linalg.norm(ErrorVerticesMatrix)
+                    try:
+                        print("Vertices Error is  ", end=" ")
+                        print(ErrorVertices)
+                        pass
+                    except:
+                        print("Can not Print out ErrorVertices")
+                except:
+                    print("Can not Calculate Error Vertices")
+            except:
+                print("Can not Calculate ErrorVerticesMatrix")
+                print("Can not calculate ErrorStiffness")
+            
+            try:
+                print("Total Error is", end=' ')
+                print(np.linalg.norm(A*X-B))
+                pass
+            except:
+                print("Can not Calculate Total Error")
+            
+        if DebugByStep:
+            #Extra Part To Export Mesh for every Step
+            
+            vertsTransformed_export = D*X;
+
+            refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed_export)
+    
+            #project source on to template
+            matcheindices_export = np.where(wVec > 0)[0]
+            vertsTransformed_export[matcheindices_export]=matches[matcheindices_export]
+            refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed_export)
+                
+            if DebugShowStep:
+                #print Out Result After each step
+                targetmesh.paint_uniform_color([0.9,0.1,0.1])             
+                refined_sourcemesh.paint_uniform_color([0.1,0.1,0.9])
+                o3d.visualization.draw_geometries([targetmesh,refined_sourcemesh])   
+            if DebugExportStep:
+                print(folder + "deformed_mesh" + "step{}/20".format(num_)+".obj")
+                
+                o3d.io.write_triangle_mesh(folder + "deformed_mesh" + "step{}20".format(num_)+".obj",refined_sourcemesh)
+                
             
     vertsTransformed = D*X;
 

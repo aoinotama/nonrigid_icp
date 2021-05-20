@@ -1,0 +1,109 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using MathNet.Numerics.LinearAlgebra;
+using ClassroomScene.Character;
+using ClassroomScene;
+using System.IO;
+
+namespace Debugging
+{
+    public class FaceReplace : MonoBehaviour
+    {
+        // Start is called before the first frame update
+        public string ImportFace;
+        public string ExportFace;
+        public string[] _ExpressionFilename = {"Anger.obj","Disgust.obj","Fear.obj","Hapiness.obj","Sadness.obj","Surprise.obj" };
+        public bool replace;
+        public HeadMesh _headmesh; 
+        
+        void Start()
+        {
+            
+        }
+
+        private void OnEnable()
+        {
+            var p =_headmesh.ExportNeuralFace();
+            Mesh_G exporter = new Mesh_G(p);
+            exporter.Export(ExportFace);
+            ExportAllExpression();
+            _headmesh.PrintExpressionInfo();
+            if (replace)
+            {
+                //_headmesh.ChangeShapeSample();
+                Mesh_G importer = new Mesh_G(ImportFace);
+                _headmesh.ChangeShapeSample(VerticeToVector(importer.vertices));
+                ExportAllExpression("New");
+            }
+
+
+            Mesh_G head = new Mesh_G("head.obj");
+            Mesh_G face = new Mesh_G(_headmesh.ExportFaceWithExpression(SimpleExpression(5)));
+            MoveHeadWithExpression("matches",face,head);
+
+            
+        }
+        // Update is called once per frame
+        void Update()
+        {
+
+        }
+
+        Vector<float> VerticeToVector(List<Vertice> vector3s)
+        {
+            Vector<float> result = Vector<float>.Build.Dense(vector3s.Count * 3);
+            for (int i = 0; i < vector3s.Count; ++i)
+            {
+                result[3 * i] = (float)vector3s[i].x;
+                result[3 * i + 1] = (float)vector3s[i].y;
+                result[3 * i + 2] = (float)vector3s[i].z - 100;// Zoffset
+            }
+            return result;
+        }
+        
+        void ExportAllExpression(string S = "")
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                ExportMeshExpression(SimpleExpression(i),S +  _ExpressionFilename[i]);
+            }
+        }
+
+        void ExportMeshExpression(Vector<float> expression,string filename)
+        {
+            Mesh_G exporter = new Mesh_G(_headmesh.ExportFaceWithExpression(expression));
+            exporter.Export(filename);
+            return;
+        }
+        
+        Vector<float> SimpleExpression(int i)
+        {
+            var expressionList = new List<float> { 0, 0, 0, 0, 0, 0 };
+            var expression = Vector<float>.Build.DenseOfEnumerable(expressionList);
+            expression[i] = 1;
+            return expression;
+        }
+
+        void MoveHeadWithExpression(string IndiceFilename,Mesh_G face, Mesh_G head)
+        {
+            StreamReader streamReader = new StreamReader(IndiceFilename);
+            List<int> matches = new List<int>();
+            
+            while (!streamReader.EndOfStream)
+            {
+                var str = streamReader.ReadLine();
+                int u = int.Parse(str);
+                matches.Add(u);
+            }
+            
+            for (int i = 0; i <matches.Count;i++)
+            {
+                head.vertices[matches[i]] = face.vertices[i]; 
+            }
+            head.Export("Moved_Head.obj");
+            return;
+        }
+    }
+
+}
