@@ -24,16 +24,18 @@ def choleskySolve(M, b):
 Debug=False
 DebugByStep=True
 DebugShowStep=False
-DebugExportStep=True
+DebugExportStep=False
+
+
 
 folder = "Expression/Reference/"
 
 normalWeighting=False
-gamma = 1
-alphas = np.linspace(20000,1,20)
-shrink = 0.01
+gamma = 0.1
+alphas = np.linspace(200,1,20)
+shrink = 1
 
-def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
+def nonrigidIcpReference(sourcemesh,targetmesh,indices=None,ReverseMatch=False):
     
     ############# Part I  Mesh to vertices   ##########
     
@@ -58,16 +60,7 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
     ####### Part II Calculate Edge Infomation ############
     
     edges = GetEdgeSet(sourcemesh_faces)
-    '''
-    alledges=[]
-    for face in sourcemesh_faces:
-        face = np.sort(face)
-        alledges.append(tuple([face[0],face[1]]))
-        alledges.append(tuple([face[0],face[2]]))
-        alledges.append(tuple([face[1],face[2]]))
-        
-    edges = set(alledges)
-    '''
+
     n_source_edges = len(edges)
     
     
@@ -78,37 +71,19 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
     
     #Set Vertice Stiffness Weight Acccording to the distances
     
-    # M2 = main_module.EdgeDisMatrix(edges,source_vertices)
-    '''
-    M2 = sparse.lil_matrix((n_source_edges, n_source_verts), dtype=np.float32)
-    
-    for i,t in enumerate(edges):
-        u = (DisToNose[t[0]] + DisToNose[t[1]])*0.6
-        u2 = u/MaxDis + 0.2
-        if u2 < 1:
-            M2[i, t[0]] = -u2
-            M2[i, t[1]] = u2
-        else:
-            M2[i, t[0]] = -0.9999999
-            M2[i, t[1]] = 0.9999999        
-           
-    
-    M = sparse.lil_matrix((n_source_edges, n_source_verts), dtype=np.float32)
-    
-    for i, t in enumerate(edges):
-        M[i, t[0]] = -1
-        M[i, t[1]] = 1
-    '''
+    M2 = main_module.EdgeDisMatrix(edges,source_vertices)
+
     M = main_module.EdgeMatrix(edges,source_vertices)
     
-    #Mdis = main_module.DisRelationMatrix(edges,source_vertices)
-    # M_dense = np.ones((n_source_edges,n_source_verts),dtype=np.float32)
-    #M = sparse.lil_matrix(M_dense)
-    
+    # M3 = main_module.DisRelationMatrix(edges,source_vertices)
+    # print(M3.toarray().shape)
     G = np.diag([1, 1, 1, gamma]).astype(np.float32)
-    #kron_M_G2 = sparse.kron(M2,G) 
+    
+    
+    kron_M_G2 = sparse.kron(M2,G) 
     
     kron_M_G = sparse.kron(M, G)
+    #kron_M_G3 = sparse.kron(M3,G)
 
     # print(kron_M_G)
     # print(kron_M_G2)
@@ -124,8 +99,22 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
         D[i,j_+3]=1
         j_+=4
 
+    if indices is None:
+        use_reference = False
+        folder = "Expression/Reference/"
+        
+    else:
+        use_reference = True
+        folder = "Expression/Result/"
+        
+    if ReverseMatch:
+        # print(type(indices))
+        # print(indices)
+        indices = main_module.ReverseMatches(indices,targetmesh,sourcemesh)
+        # print(type(indices))
+        # print(indices)
+        mismatches = main_module.GetMisMatches(indices)
     
-
     #AFFINE transformations stored in the 4n*3 format
     X_= np.concatenate((np.eye(3),np.array([[0,0,0]])),axis=0)
     X = np.tile(X_,(n_source_verts,1))
@@ -166,16 +155,31 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
             
             vertsTransformed = D*X
             
-            distances, indices = knnsearch.kneighbors(vertsTransformed)
+            distances, indices_raw = knnsearch.kneighbors(vertsTransformed)
             
-            indices = indices.squeeze()
+            if not use_reference:
+                
+                indices = indices_raw.squeeze()
             
-            matches = target_vertices[indices]
+            
+            
             
             #rigtnow setting threshold manualy, but if we have and landmark info we could set here
-            mismatches = np.where(distances>15)[0]
-            
-            
+            if not ReverseMatch:
+                matches = target_vertices[indices]
+                mismatches = np.where(distances>15)[0]
+            else:
+                tempindices = indices
+                # tempindices = copy.deepcopy(indices)
+                for i in range(0,len(tempindices)):
+                    if tempindices[i]==-1:
+                        tempindices[i] = 0
+                        # print(tempindices[i])
+                        # print(indices[i])
+                matches = target_vertices[tempindices]
+            # print("Shape of mismatches is")
+            # print(mismatches.shape)
+            # print(mismatches)
             if normalWeighting:
                 normalsTransformed = DN*X
                 corNormalsTarget = target_mesh_normals[indices]
@@ -188,7 +192,7 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
                 
                 
     
-            #setting weights of false mathces to zero   
+            #setting weights of false matches to zero   
             wVec[mismatches] = 0
                 
             #Equation  12
@@ -196,9 +200,9 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
             
             U = wVec*matches
             
-            print(wVec.shape)
-            print(matches.shape)
-            print(U.shape)
+            # print(wVec.shape)
+            # print(matches.shape)
+            # print(U.shape)
             
             # kron_M_G_Face = kron_M_G  -  ((num_+1)/20) * kron_M_G2
             
@@ -208,23 +212,27 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
             # print(kron_M_G_Face)
             outfilename =  "Mat{}.txt".format(num_)
             np.set_printoptions(threshold=np.inf)
-            with open(outfilename,"w") as fp:
+            # with open(outfilename,"w") as fp:
                 # print(kron_M_G_Face,file=fp)
-                pass
+            #    pass
             
             A = sparse.csr_matrix(sparse.vstack([alpha_stiffness * kron_M_G_Face,  shrink * D.multiply(wVec) ]))
+            # print(kron_M_G_Face.toarray().shape[0])
+            # print(kron_M_G_Face.shape)
             
-            B = sparse.lil_matrix((kron_M_G_Face.toarray().shape[0] + n_source_verts, 3), dtype=np.float32)
+            try:
+                B = sparse.lil_matrix((kron_M_G_Face.shape[0] + n_source_verts, 3), dtype=np.float32)
+            except:
+                print(kron_M_G_Face.shape)
+                print(kron_M_G_Face.toarray().shape[0])
+                
             
             try:
                 print(kron_M_G_Face.shape)
             except:
                 print(kron_M_G_Face.toarray().shape)
-            print(4*n_source_edges)
-            print(n_source_verts)
-            print(A.toarray().shape)
-            print(B.toarray().shape)
-            B[4 * n_source_edges: (4 * n_source_edges + n_source_verts), :] = shrink * U
+
+            B[kron_M_G_Face.shape[0]: (kron_M_G_Face.shape[0] + n_source_verts), :] = shrink * U
             
             X = choleskySolve(A, B)
         
@@ -315,11 +323,11 @@ def nonrigidIcpReference(sourcemesh,targetmesh,use_reference=False):
     refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
     
     #project source on to template
-    matcheindices = np.where(wVec > 0)[0]
-    vertsTransformed[matcheindices]=matches[matcheindices]
-    refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
+    # matcheindices = np.where(wVec > 0)[0]
+    # vertsTransformed[matcheindices]=matches[matcheindices]
+    # refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
 
 
 
 
-    return indices;
+    return [indices,refined_sourcemesh]

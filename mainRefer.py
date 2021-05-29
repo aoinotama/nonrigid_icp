@@ -12,7 +12,7 @@ from exportMatches import exportmatches
 
 ShowMesh = False
 
-folder = "Expression/Neutral/"
+folder = "Expression/Result/"
 
 def ComputeNICP(sourceFileName,targetFileName,deformed_meshName,sourceFileNameRef,targetFilaNameRef):
     #Read source of referenced NICP model 
@@ -46,16 +46,18 @@ def ComputeNICP(sourceFileName,targetFileName,deformed_meshName,sourceFileNameRe
     
     #non rigid registration for good case
 
-    matches = nonrigidIcpReference(refined_sourcemeshRef,targetmeshRef)
+    matches,deformed_reference_mesh = nonrigidIcpReference(refined_sourcemeshRef,targetmeshRef)
     exportmatches(matches)
-    deformed_mesh = nonrigidIcpWithReference(refined_sourcemesh,targetmesh,matches)
-
+    print(matches.shape)
+    # newmatches,deformed_mesh = nonrigidIcpReference(refined_sourcemesh,targetmesh,matches)
+    newmatches,deformed_mesh = nonrigidIcpReference(targetmesh,refined_sourcemesh,matches,True)
     if ShowMesh:
         sourcemesh.paint_uniform_color([0.1, 0.9, 0.1])
         targetmesh.paint_uniform_color([0.9,0.1,0.1])
         deformed_mesh.paint_uniform_color([0.1,0.1,0.9])
         o3d.visualization.draw_geometries([targetmesh,deformed_mesh])
     o3d.io.write_triangle_mesh(deformed_meshName,deformed_mesh)
+    o3d.io.write_triangle_mesh(deformed_meshName+"ref.obj",deformed_reference_mesh)
 
 if __name__ == "__main__":
     if (len(sys.argv) == 1):

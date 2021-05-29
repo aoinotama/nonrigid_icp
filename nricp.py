@@ -1,27 +1,46 @@
 import numpy as np
 from scipy import sparse
+from scipy.linalg import lstsq
 from sklearn.neighbors import NearestNeighbors
 from sksparse.cholmod import cholesky_AAt
 import open3d as o3d
 import copy
+import main_module
 
 def choleskySolve(M, b):
+    try:
+        factor = cholesky_AAt(M.T)
+        return factor(M.T.dot(b)).toarray()
+    except:
+        print("CholeskySolve failed, Try sparse.lsqr to solve")
+        print(b.shape)
+        print(M.shape)
+        # Divide b into 3 part
+        b0 = b[:,0].toarray()
+        b1 = b[:,1].toarray()
+        b2 = b[:,2].toarray()
+        print(b0.shape)
+        x0 = sparse.linalg.lsqr(M,b0)[0]
+        print(x0.shape)
+        x1 = sparse.linalg.lsqr(M,b1)[0]
+        x2 = sparse.linalg.lsqr(M,b2)[0]
+        x = np.array([x0,x1,x2])
+        x = x.transpose()
+        print(x.shape)
+        return x
 
-    factor = cholesky_AAt(M.T)
-    return factor(M.T.dot(b)).toarray()
-
-
-folder = "ExpSimple\Ref2"
+folder = "ExpSimple\\Ref2\\"
 
 Debug=False
 DebugByStep=True
-DebugShowStep=True
+DebugShowStep=False
 DebugExportStep=True
 
+shrink = 1
 
 normalWeighting=False
 gamma = 1
-alphas = np.linspace(200,1,20)
+alphas = np.linspace(2000,2000,20)
 
 def nonrigidIcp(sourcemesh,targetmesh):
     
@@ -29,6 +48,9 @@ def nonrigidIcp(sourcemesh,targetmesh):
     #obtain vertices
     target_vertices = np.array(targetmesh.vertices)
     source_vertices = np.array(refined_sourcemesh.vertices)
+    target_vertices *= shrink
+    source_vertices *= shrink
+    
     #num of source mesh vertices 
     n_source_verts = source_vertices.shape[0]
     
@@ -40,6 +62,10 @@ def nonrigidIcp(sourcemesh,targetmesh):
     knnsearch = NearestNeighbors(n_neighbors=1, algorithm='kd_tree').fit(target_vertices)
 
     sourcemesh_faces = np.array(sourcemesh.triangles)
+    print(sourcemesh_faces)
+    print(type(sourcemesh_faces))
+    print(source_vertices)
+    print(type(source_vertices))
     
     #calculating edge info
     alledges=[]
@@ -152,10 +178,16 @@ def nonrigidIcp(sourcemesh,targetmesh):
             B[4 * n_source_edges: (4 * n_source_edges +n_source_verts), :] = U
             
             X = choleskySolve(A, B)
-        
+
+            main_module.PrintInfo(A,B,X,U,D,wVec,alpha_stiffness,kron_M_G)
             try:
                 ErrorStiffness = alpha_stiffness * kron_M_G * X
                 ErrorFace = kron_M_G * X
+                print("Matrix for Edge **********")
+                print(ErrorStiffness)
+                
+                
+                
                 try:
                     # print(ErrorStiffness.shape)
                     pass
@@ -176,8 +208,8 @@ def nonrigidIcp(sourcemesh,targetmesh):
                     try:
                         ErrorS = np.linalg.norm(temp)
                         ErrorFace = np.linalg.norm(ErrorFace - B[0:4 * n_source_edges, :])
-                        # print("Stiffness Error is  ", end=" ")
-                        # print(ErrorS)
+                        print("Stiffness Error is  ", end=" ")
+                        print(ErrorS)
                         print("Face Error is", end=" ")
                         print(ErrorFace)
                     except Exception as er1:
@@ -193,6 +225,8 @@ def nonrigidIcp(sourcemesh,targetmesh):
                 ErrorVerticesMatrix = D.multiply(wVec)*X - U
                 try:
                     ErrorVertices = np.linalg.norm(ErrorVerticesMatrix)
+                    print("Matrix for vertices ********")
+                    print(ErrorVerticesMatrix)
                     try:
                         print("Vertices Error is  ", end=" ")
                         print(ErrorVertices)
@@ -216,14 +250,9 @@ def nonrigidIcp(sourcemesh,targetmesh):
             #Extra Part To Export Mesh for every Step
             
             vertsTransformed_export = D*X;
+            vertsTransformed_export /= shrink
 
             refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed_export)
-    
-            #project source on to template
-            matcheindices_export = np.where(wVec > 0)[0]
-            vertsTransformed_export[matcheindices_export]=matches[matcheindices_export]
-            refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed_export)
-                
             if DebugShowStep:
                 #print Out Result After each step
                 targetmesh.paint_uniform_color([0.9,0.1,0.1])             
@@ -236,13 +265,13 @@ def nonrigidIcp(sourcemesh,targetmesh):
                 
             
     vertsTransformed = D*X;
-
+    vertsTransformed /= shrink
     refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
     
     #project source on to template
-    matcheindices = np.where(wVec > 0)[0]
-    vertsTransformed[matcheindices]=matches[matcheindices]
-    refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
+    # matcheindices = np.where(wVec > 0)[0]
+    # vertsTransformed[matcheindices]=matches[matcheindices]
+    # refined_sourcemesh.vertices = o3d.utility.Vector3dVector(vertsTransformed)
 
 
 
